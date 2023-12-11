@@ -1,0 +1,119 @@
+/** 
+ * @NApiVersion 2.0
+ * @NScriptType MapReduceScript 
+ */
+define(['N/search', 'N/record', 'N/https'], function(search, record, https) {
+    function getInputData() {
+         var headerObj = {
+            "Authorization": "pk_50174829_4HDATRI6L1I4W61ESK7RGWXSXVFYZK6N"
+        };
+		log.debug('headerObj',headerObj);
+		var authorization = headerObj.Authorization;
+		var accessToken1 = [];
+        accessToken1.push(authorization);
+        return accessToken1;
+		 }
+		 
+        function map(context) {
+			log.debug('map context',context);
+        
+	   var headerObj = {
+            "Authorization": "pk_50174829_4HDATRI6L1I4W61ESK7RGWXSXVFYZK6N"
+        };
+        var timeEntryResponse = https.get({
+            url: 'https://api.clickup.com/api/v2/team/30937605/task?page=0&space_ids[]=49008593&assignees[]=50174829&last_page=true&start_date=1701388800000&end_date=1703980800000',
+            headers: headerObj
+        });
+        log.debug('timeEntryResponse', timeEntryResponse);
+
+        var responseBody = JSON.parse(timeEntryResponse.body);
+        log.debug('responseBody', responseBody);
+
+        var responseCount = responseBody.tasks.length;
+		log.debug('responseCount',responseCount);
+         for (var i = 0; i < responseCount; i++) {
+            var assignees = responseBody.tasks[i].assignees[0].username;
+            log.debug('assignees',assignees);
+			var projectName = responseBody.tasks[i].list.name;
+            log.debug('projectName',projectName);
+			var timeSpent = responseBody.tasks[i].time_spent;
+            log.debug('timeSpent',timeSpent);
+			var empInternalId;
+			var projectId;
+			var employeeSearchObj = search.create({
+	   type: "employee",
+	   filters:
+	   [
+		  ["entityid","is",assignees]
+	   ],
+	   columns:
+	   [
+		  search.createColumn({name: "internalid", label: "Internal ID"})
+	   ]
+	});
+	var searchResultCount = employeeSearchObj.runPaged().count;
+	log.debug("employeeSearchObj result count",searchResultCount);
+	employeeSearchObj.run().each(function(result){
+		empInternalId = result.getValue({
+			name: "internalid"
+		})
+	   // .run().each has a limit of 4,000 results
+	   return true;
+	});
+	var jobSearchObj = search.create({
+	   type: "job",
+	   filters:
+	   [
+		  ["entityid","is",projectName]
+	   ],
+	   columns:
+	   [
+		  search.createColumn({name: "internalid", label: "Internal ID"})
+	   ]
+	});
+	var searchResultCount = jobSearchObj.runPaged().count;
+	log.debug("jobSearchObj result count",searchResultCount);
+	jobSearchObj.run().each(function(result){
+		projectId = result.getValue({
+			name: "internalid"
+		})
+	   // .run().each has a limit of 4,000 results
+	   return true;
+	});
+		var empHour = Number(timeSpent)/Number(3600000);
+		log.debug('empHour',empHour);
+				var recCreate = record.create({
+					type : 'timebill',
+					isDynamic : true
+				});
+				recCreate.setValue({
+					fieldId : 'employee',
+					value : empInternalId
+				})
+				recCreate.setValue({
+					fieldId : 'customer',
+					value : projectId
+				})
+				recCreate.setValue({
+					fieldId : 'hours',
+					value : empHour
+				});
+				var recId = recCreate.save();
+				log.debug('recId',recId);
+		}
+			}
+			function reduce(context) {
+				
+			}
+
+			function summarize(context) {
+			   
+			}
+
+		return {
+			getInputData: getInputData,
+			map: map,
+			reduce: reduce,
+			summarize: summarize
+		};
+	});
